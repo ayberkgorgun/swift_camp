@@ -6,6 +6,8 @@ import CryptoKit
 
 struct LoginView: View {
     @ObservedObject var presenter: LoginPresenter
+    @StateObject private var socialSignInHelper = SocialSignInHelper()
+
 
     @State private var email: String = ""
     @State private var password: String = ""
@@ -13,6 +15,7 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var isLoading: Bool = false
     @State private var currentNonce: String?
+    @State private var isPasswordVisible: Bool = false
 
     var body: some View {
         NavigationView {
@@ -23,23 +26,42 @@ struct LoginView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Email address or phone number")
-                    TextField("Your email", text: $email)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .onAppear {
-                            email = ""
-                            password = ""
-                            loadRememberedEmail()
-                        }
+                    HStack {
+                        TextField("Your email", text: $email)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .onAppear {
+                                email = ""
+                                password = ""
+                                loadRememberedEmail()
+                            }
+                            .onChange(of: email) { newEmail in
+                                checkRememberedPassword(for: newEmail)
+                            }
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 5).stroke(Color.gray.opacity(0.5), lineWidth: 1))
 
-                        .onChange(of: email) { newEmail in
-                            checkRememberedPassword(for: newEmail)
-                        }
                     Text("Password")
-                    SecureField("Password", text: $password)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    HStack {
+                        if isPasswordVisible {
+                            TextField("Password", text: $password)
+                        } else {
+                            SecureField("Password", text: $password)
+                        }
+                        
+                        Button(action: {
+                            isPasswordVisible.toggle()
+                        }) {
+                            Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.trailing, 8)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 5).stroke(Color.gray.opacity(0.5), lineWidth: 1))
                 }
+
                 HStack {
                     Text("Remember me")
                     Toggle("", isOn: $rememberMe)
@@ -55,7 +77,7 @@ struct LoginView: View {
                 }
 
 
-                if let error = errorMessage {
+                if let error = socialSignInHelper.errorMessage {
                     Text(error)
                         .foregroundColor(.red)
                         .font(.footnote)
@@ -79,7 +101,14 @@ struct LoginView: View {
                     .foregroundColor(.gray)
 
                 Button(action: {
-                    presenter.handleGoogleLogin()
+                    socialSignInHelper.signInWithGoogle { result in
+                        switch result {
+                        case .success:
+                            presenter.handleSuccessfulLogin()
+                        case .failure(let error):
+                            socialSignInHelper.errorMessage = error.localizedDescription
+                        }
+                    }
                 }) {
                     HStack {
                         Image("googleLogo")
@@ -95,7 +124,14 @@ struct LoginView: View {
                 }
 
                 Button(action: {
-                    presenter.handleGitHubLogin()
+                    socialSignInHelper.signInWithGitHub { result in
+                        switch result {
+                        case .success:
+                            presenter.handleSuccessfulLogin()
+                        case .failure(let error):
+                            socialSignInHelper.errorMessage = error.localizedDescription
+                        }
+                    }
                 }) {
                     HStack {
                         Image("githubLogo")
@@ -109,8 +145,16 @@ struct LoginView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
                 }
+
                 Button(action: {
-                    presenter.handleFacebookLogin()
+                    socialSignInHelper.signInWithFacebook { result in
+                        switch result {
+                        case .success:
+                            presenter.handleSuccessfulLogin()
+                        case .failure(let error):
+                            socialSignInHelper.errorMessage = error.localizedDescription
+                        }
+                    }
                 }) {
                     HStack {
                         Image("facebookLogo")
@@ -125,15 +169,26 @@ struct LoginView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
                 }
+
                 SignInWithAppleButton(
                     .signIn,
                     onRequest: configureAppleRequest,
-                    onCompletion: handleAppleSignIn
+                    onCompletion: { result in
+                        socialSignInHelper.handleAppleSignIn(result: result) { result in
+                            switch result {
+                            case .success:
+                                presenter.handleSuccessfulLogin()
+                            case .failure(let error):
+                                socialSignInHelper.errorMessage = error.localizedDescription
+                            }
+                        }
+                    }
                 )
                 .signInWithAppleButtonStyle(.black)
                 .frame(maxWidth: .infinity)
                 .frame(height: 45)
                 .cornerRadius(8)
+
                 Spacer()
                 HStack {
                     Text("Don’t have an account?")
@@ -249,6 +304,5 @@ struct LoginView: View {
             self.password = savedPassword
         } else {
             self.password = ""
-        }
-    } 
+        }}
 }
